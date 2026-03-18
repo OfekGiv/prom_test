@@ -73,20 +73,6 @@ class RemoteCapture:
         log.info("Fetched pcap: %s -> %s", src, local_path)
         return local_path
 
-    def packet_count(self) -> int:
-        """Return the number of packets in the remote capture file."""
-        if not self._cfg.host:
-            return 0
-
-        result = self._ssh(
-            f"tcpdump -r {shlex.quote(self._remote_pcap)} 2>/dev/null | wc -l",
-            check=False,
-        )
-        try:
-            return int(result.stdout.strip())
-        except ValueError:
-            return 0
-
     # ------------------------------------------------------------------
     # Context manager
     # ------------------------------------------------------------------

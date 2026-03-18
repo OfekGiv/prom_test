@@ -22,7 +22,7 @@ class EalConfig:
 class AppConfig:
     promiscuous: bool = True
     portmask: str = "0x1"
-    config: str = "(0,0,1),(0,1,2)"
+    config: str = ""
     rule_ipv4: Path = Path("/homes/ofer.katz/Tests/l3fwd/ipv4_rule.db")
     rule_ipv6: Path = Path("/homes/ofer.katz/Tests/l3fwd/ipv6_rule.db")
 
@@ -49,10 +49,53 @@ class L3fwdConfig:
     remote: RemoteConfig = field(default_factory=RemoteConfig)
 
 
+def _parse_lcores(s: str) -> list[int]:
+    """Parse an EAL lcore list/range string into a list of ints.
+
+    Examples:
+        "1-2" -> [1, 2]
+        "2,4,6,8" -> [2, 4, 6, 8]
+        "1-2,4" -> [1, 2, 4]
+    """
+
+    if not s:
+        return []
+
+    out: list[int] = []
+    for part in s.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            lo, hi = part.split("-", 1)
+            out.extend(range(int(lo), int(hi) + 1))
+        else:
+            out.append(int(part))
+    return out
+
+
+def _lcores_to_fwd_config(lcores: list[int]) -> str:
+    """Generate an l3fwd --config string for a list of lcores.
+
+    The format is:
+        (0,0,lcore0),(0,1,lcore1),...
+    """
+    return ",".join(f"(0,{i},{lc})" for i, lc in enumerate(lcores))
+
+
+def _count_fwd_config_entries(config: str) -> int:
+    """Count how many (0,i,lcore) entries appear in a config string."""
+    import re
+
+    return len(re.findall(r"\(\s*0\s*,\s*\d+\s*,\s*\d+\s*\)", config))
+
+
 def _from_dict(data: dict[str, Any]) -> L3fwdConfig:
     eal_data = data.get("eal", {})
     app_data = data.get("app", {})
     remote_data = data.get("remote", {})
+
+    defaults = L3fwdConfig()
 
     eal = EalConfig(
         lcores=eal_data.get("lcores", EalConfig.lcores),
@@ -61,10 +104,22 @@ def _from_dict(data: dict[str, Any]) -> L3fwdConfig:
         pci_args=eal_data.get("pci_args", EalConfig.pci_args),
     )
 
+    # Determine the actual lcore list used for both EAL and packet generation.
+    # Prefer an explicit top-level `lcores:` list in YAML; otherwise derive it
+    # from the EAL `lcores` string (e.g. "1-2", "2,4,6,8").
+    if "lcores" in data:
+        lcores = list(data["lcores"])
+    else:
+        lcores = _parse_lcores(eal.lcores)
+
+    app_config = str(app_data.get("config", ""))
+    if not app_config or _count_fwd_config_entries(app_config) != len(lcores):
+        app_config = _lcores_to_fwd_config(lcores)
+
     app = AppConfig(
         promiscuous=bool(app_data.get("promiscuous", AppConfig.promiscuous)),
         portmask=str(app_data.get("portmask", AppConfig.portmask)),
-        config=str(app_data.get("config", AppConfig.config)),
+        config=app_config,
         rule_ipv4=Path(app_data["rule_ipv4"]) if "rule_ipv4" in app_data else AppConfig.rule_ipv4,
         rule_ipv6=Path(app_data["rule_ipv6"]) if "rule_ipv6" in app_data else AppConfig.rule_ipv6,
     )
@@ -81,7 +136,7 @@ def _from_dict(data: dict[str, Any]) -> L3fwdConfig:
     return L3fwdConfig(
         binary=Path(data.get("binary", defaults.binary)),
         pkts_dir=Path(data.get("pkts_dir", defaults.pkts_dir)),
-        lcores=list(data.get("lcores", defaults.lcores)),
+        lcores=lcores,
         startup_timeout=int(data.get("startup_timeout", defaults.startup_timeout)),
         dry_run=bool(data.get("dry_run", False)),
         use_sudo=bool(data.get("use_sudo", True)),
@@ -124,7 +179,15 @@ def apply_cli_overrides(cfg: L3fwdConfig, args: Any) -> L3fwdConfig:
 
     # EAL
     if (v := _get("--lcores") or _get("lcores")) is not None:
+        # If app.config was auto-generated from the previous lcore list, refresh it.
+        prev_auto = _lcores_to_fwd_config(cfg.lcores)
+
         cfg.eal.lcores = v
+        new_lcores = _parse_lcores(v)
+        cfg.lcores = new_lcores
+
+        if cfg.app.config == prev_auto:
+            cfg.app.config = _lcores_to_fwd_config(new_lcores)
     if (v := _get("--mem-channels") or _get("mem_channels")) is not None:
         cfg.eal.mem_channels = int(v)
     if (v := _get("--pci") or _get("pci")) is not None:

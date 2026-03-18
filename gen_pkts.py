@@ -41,17 +41,24 @@ _DEFAULT_OUT_DIR = os.path.join(os.path.dirname(__file__), "pkts")
 def generate(lcore_ids, out_dir: str | None = None):
     out = out_dir or _DEFAULT_OUT_DIR
     os.makedirs(out, exist_ok=True)
-    for lcore_id in lcore_ids:
-        for i in range(10):
+
+    num_cores = len(lcore_ids)
+    if num_cores == 0 or (num_cores & (num_cores - 1)) != 0:
+        raise ValueError("lcore_ids length must be a power of 2")
+
+    # Generate in a round-robin layout so that sequence numbers are distributed
+    # as: core0=0..31, core1=32..63, ..., then core0=64..95, etc.
+    for block in range(10):
+        for core_idx, lcore_id in enumerate(lcore_ids):
             for j in range(32):
-                seq = i * 32 + j
+                seq = (block * num_cores + core_idx) * 32 + j
                 pkt = bytearray(BASE_PKT)
-                pkt[98] = lcore_id & 0xff
-                pkt[99] = (32 * (2 * i + lcore_id - 1) + j) & 0xff
+                pkt[98] = lcore_id & 0xFF
+                pkt[99] = seq & 0xFF
                 fname = os.path.join(out, f"pkt_lcore_{lcore_id}_seq_{seq}.bin")
                 with open(fname, "wb") as f:
                     f.write(pkt)
-        print(f"lcore {lcore_id}: wrote {10 * 32} files to {out}/")
+    print(f"lcores {lcore_ids}: wrote {10 * 32 * num_cores} files to {out}/")
 
 
 if __name__ == "__main__":

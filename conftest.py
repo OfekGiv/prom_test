@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import fcntl
 import logging
+import os
+import shutil
 from pathlib import Path
 from typing import Iterator
 
@@ -52,6 +55,21 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 # Fixtures
 # ---------------------------------------------------------------------------
 
+_SESSION_LOCK_PATH = "/tmp/prom_test.lock"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def session_lock() -> Iterator[None]:
+    """Prevent multiple pytest runs from overlapping (shared hardware)."""
+    fd = os.open(_SESSION_LOCK_PATH, os.O_RDWR | os.O_CREAT, 0o666)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
 @pytest.fixture(scope="session")
 def l3fwd_config(request: pytest.FixtureRequest) -> L3fwdConfig:
     cfg_path = request.config.getoption("--prom-config")
@@ -68,6 +86,14 @@ def l3fwd_process(l3fwd_config: L3fwdConfig) -> Iterator[L3fwdProcess]:
         if not ready and not l3fwd_config.dry_run:
             pytest.fail("l3fwd did not become ready in time")
         yield proc
+
+
+@pytest.fixture(scope="function", autouse=True)
+def clean_pkts_dir(l3fwd_config: L3fwdConfig) -> None:
+    """Wipe and recreate pkts_dir before each test to prevent cross-test interference."""
+    if l3fwd_config.pkts_dir.exists():
+        shutil.rmtree(l3fwd_config.pkts_dir)
+    l3fwd_config.pkts_dir.mkdir(parents=True, exist_ok=True)
 
 
 @pytest.fixture(scope="function")
