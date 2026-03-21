@@ -39,7 +39,8 @@ class RemoteConfig:
 @dataclass
 class L3fwdConfig:
     binary: Path = Path("/homes/ofer.katz/prom-dpdk/build/examples/dpdk-l3fwd")
-    pkts_dir: Path = Path("./pkts")
+    pkts_dir: Path = Path("/homes/ofer.katz/prom_test/pkts")
+    traces_dir: Path = Path("/tmp/dpdk-traces")
     lcores: list[int] = field(default_factory=lambda: [1, 2])
     startup_timeout: int = 30
     dry_run: bool = False
@@ -136,6 +137,7 @@ def _from_dict(data: dict[str, Any]) -> L3fwdConfig:
     return L3fwdConfig(
         binary=Path(data.get("binary", defaults.binary)),
         pkts_dir=Path(data.get("pkts_dir", defaults.pkts_dir)),
+        traces_dir=Path(data.get("traces_dir", defaults.traces_dir)),
         lcores=lcores,
         startup_timeout=int(data.get("startup_timeout", defaults.startup_timeout)),
         dry_run=bool(data.get("dry_run", False)),

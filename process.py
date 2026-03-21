@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import signal
 import subprocess
 import threading
@@ -44,8 +45,8 @@ class L3fwdProcess:
             "-l", eal.lcores,
             "-n", str(eal.mem_channels),
             "-a", f"{eal.pci_addr},{eal.pci_args}",
-            "--trace='pmd.net.mlx5.db.ring'",
-            "--trace-dir=./traces",
+            "--trace", "pmd.net.mlx5.db.ring",
+            "--trace-dir", str(self._cfg.traces_dir.resolve()),
             "--",
             # App args
             "-p", app.portmask,
@@ -70,16 +71,19 @@ class L3fwdProcess:
             log.info("[dry-run] skipping Popen")
             return
 
+        self._cfg.traces_dir.mkdir(parents=True, exist_ok=True)
         self._proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
+            start_new_session=True,
+            cwd=self._cfg.pkts_dir.resolve().parent,
         )
 
         for stream, buf, level in [
-            (self._proc.stdout, self._stdout, logging.DEBUG),
+            (self._proc.stdout, self._stdout, logging.INFO),
             (self._proc.stderr, self._stderr, logging.WARNING),
         ]:
             t = threading.Thread(
@@ -119,14 +123,22 @@ class L3fwdProcess:
         if self._proc.poll() is not None:
             return  # already exited
 
-        log.info("Stopping l3fwd (SIGINT)...")
-        self._proc.send_signal(signal.SIGINT)
+        log.info("Stopping l3fwd (SIGINT to process group)...")
+        os.killpg(os.getpgid(self._proc.pid), signal.SIGINT)
         try:
-            self._proc.wait(timeout=5)
+            self._proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
             log.warning("l3fwd did not exit after SIGINT, sending SIGKILL")
-            self._proc.kill()
+            os.killpg(os.getpgid(self._proc.pid), signal.SIGKILL)
             self._proc.wait()
+
+        # DPDK creates trace dirs as root with 0700; make them readable
+        traces_dir = self._cfg.traces_dir
+        if traces_dir.exists():
+            subprocess.run(
+                ["sudo", "chmod", "-R", "a+rX", str(traces_dir)],
+                check=False,
+            )
 
         for t in self._threads:
             t.join(timeout=2)

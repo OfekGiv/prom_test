@@ -66,6 +66,11 @@ def capture_lcore_segments(packets: list[bytes]) -> list[tuple[int, int, int, in
     def _pkt_meta(p: bytes) -> tuple[int, int]:
         return (p[98], p[99])
 
+    # Skip leading packets that are too short to contain our metadata bytes
+    packets = [p for p in packets if len(p) >= 100]
+    if not packets:
+        return segments
+
     cur_lcore, cur_seq = _pkt_meta(packets[0])
     start_seq = cur_seq
     count = 1
@@ -196,7 +201,7 @@ def summarize_trace_by_lcore(trace_dir: Path) -> dict[int, dict[str, int]]:
 
     try:
         raw = subprocess.check_output(
-            ["babeltrace2", str(trace_dir)],
+            ["sudo", "babeltrace2", str(trace_dir)],
             text=True,
             stderr=subprocess.DEVNULL,
         )
@@ -233,7 +238,7 @@ def check_trace_order(trace_dir: Path) -> list[str]:
 
     try:
         raw = subprocess.check_output(
-            ["babeltrace2", str(trace_dir)],
+            ["sudo", "babeltrace2", str(trace_dir)],
             text=True,
             stderr=subprocess.DEVNULL,
         )

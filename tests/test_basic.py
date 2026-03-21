@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import subprocess
 import time
 from pathlib import Path
 
@@ -49,6 +50,7 @@ def test_dry_run_command(l3fwd_config: L3fwdConfig) -> None:
         [1, 2],
         [1, 3, 5, 7],
         [2, 4, 6, 8],
+        [1, 2, 3, 4, 5, 6, 7, 8],
     ],
 )
 def test_packets_sent(
@@ -70,6 +72,13 @@ def test_packets_sent(
     l3fwd_config.eal.lcores = ",".join(str(x) for x in lcore_ids)
     l3fwd_config.app.config = _lcores_to_fwd_config(lcore_ids)
 
+    # Clean pkts and traces directories so previous test data doesn't interfere
+    # traces_dir contains root-owned files from sudo l3fwd, so use sudo rm
+    for d in (l3fwd_config.pkts_dir, l3fwd_config.traces_dir):
+        if d.exists():
+            subprocess.run(["sudo", "rm", "-rf", str(d)], check=False)
+        d.mkdir(parents=True, exist_ok=True)
+
     generate(lcore_ids, out_dir=str(l3fwd_config.pkts_dir))
 
     remote_pcap = "/tmp/prom_capture.pcap"
@@ -86,12 +95,12 @@ def test_packets_sent(
         # Wait for l3fwd to finish sending all packets
         time.sleep(l3fwd_config.remote.capture_timeout)
 
-    # l3fwd is stopped; give tshark a moment to flush then stop it
+    # l3fwd is stopped; give tcpdump a moment to flush then stop it
     time.sleep(1)
     remote_capture.stop_capture()
 
     pcap_path = remote_capture.fetch_pcap(local_pcap)
-    traces_path = Path("./traces")
+    traces_path = l3fwd_config.traces_dir.resolve()
     packets = load_pcap(pcap_path)
 
     # Log capture interleaving summary (per-lcore segments in capture order)
@@ -130,7 +139,7 @@ def test_packets_sent(
     assert traces_dir.exists() and traces_dir.is_dir(), f"Expected trace directory '{traces_dir}' to exist"
 
     trace_dirs = [p for p in traces_dir.iterdir() if p.is_dir()]
-    assert trace_dirs, "No trace output directories found under './traces'"
+    assert trace_dirs, f"No trace output directories found under '{traces_dir}'"
 
     latest_trace = max(trace_dirs, key=lambda p: p.stat().st_mtime)
     errors = check_trace_order(latest_trace)
