@@ -35,10 +35,12 @@ class RemoteCapture:
 
         self._remote_pcap = output_file or "/tmp/prom_capture.pcap"
         self._ssh(f"sudo rm -f {shlex.quote(self._remote_pcap)}", check=False)
+    
         cmd = (
             f"nohup sudo tcpdump -i {shlex.quote(self._cfg.iface)} "
-            f"-w {shlex.quote(self._remote_pcap)} "
-            f"> /dev/null 2>&1 & echo $!"
+            f"-B 16384 -s 128 "
+            f"-w {shlex.quote(self._remote_pcap)}"
+            f" > /dev/null 2>&1 & echo $!"
         )
         result = self._ssh(cmd, check=False)
         if result.returncode == 0:

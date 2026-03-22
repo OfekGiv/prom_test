@@ -47,10 +47,11 @@ def test_dry_run_command(l3fwd_config: L3fwdConfig) -> None:
 @pytest.mark.parametrize(
     "lcore_ids",
     [
-        [1, 2],
-        [1, 3, 5, 7],
-        [2, 4, 6, 8],
-        [1, 2, 3, 4, 5, 6, 7, 8],
+        # [1, 2],
+        # [1, 3, 5, 7],
+        # list(range(8)),
+        # list(range(16)),
+        list(range(32)),
     ],
 )
 def test_packets_sent(

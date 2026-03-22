@@ -12,10 +12,10 @@ import yaml
 
 @dataclass
 class EalConfig:
-    lcores: str = "1-2"
+    lcores: str = "1,2"
     mem_channels: int = 4
     pci_addr: str = "0000:98:00.0"
-    pci_args: str = "mu_sq_log_grp_size=1"
+    pci_args: str = "mu_sq_log_grp_size="
 
 
 @dataclass

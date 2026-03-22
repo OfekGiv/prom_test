@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 import signal
 import subprocess
@@ -44,7 +45,7 @@ class L3fwdProcess:
             # EAL args
             "-l", eal.lcores,
             "-n", str(eal.mem_channels),
-            "-a", f"{eal.pci_addr},{eal.pci_args}",
+            "-a", f"{eal.pci_addr},{eal.pci_args}{int(math.log2(len(self._cfg.lcores)))}",
             "--trace", "pmd.net.mlx5.db.ring",
             "--trace-dir", str(self._cfg.traces_dir.resolve()),
             "--",
