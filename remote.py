@@ -23,6 +23,7 @@ class RemoteCapture:
     def __init__(self, cfg: RemoteConfig) -> None:
         self._cfg = cfg
         self._remote_pcap: str = "/tmp/prom_capture.pcap"
+        self._remote_log: str = "/tmp/prom_capture.log"
 
     # ------------------------------------------------------------------
     # Capture lifecycle
@@ -34,20 +35,46 @@ class RemoteCapture:
             return
 
         self._remote_pcap = output_file or "/tmp/prom_capture.pcap"
-        self._ssh(f"sudo rm -f {shlex.quote(self._remote_pcap)}", check=False)
-    
+        self._ssh(
+            f"sudo rm -f {shlex.quote(self._remote_pcap)} {shlex.quote(self._remote_log)}",
+            check=False,
+        )
+
+        capture_filter = self._cfg.capture_filter.strip() if self._cfg.capture_filter else ""
+        filter_part = f" {shlex.quote(capture_filter)} " if capture_filter else " "
         cmd = (
             f"nohup sudo tcpdump -i {shlex.quote(self._cfg.iface)} "
             f"-B 16384 -s 128 "
+            f"{filter_part}"
             f"-w {shlex.quote(self._remote_pcap)}"
-            f" > /dev/null 2>&1 & echo $!"
+            f" > {shlex.quote(self._remote_log)} 2>&1 < /dev/null & echo $!"
         )
         result = self._ssh(cmd, check=False)
         if result.returncode == 0:
             pid = result.stdout.strip()
             log.info("Remote tcpdump started on %s (pid=%s)", self._cfg.host, pid)
+
+            # Fail early if tcpdump exits immediately (e.g., invalid/down iface)
+            check_result = self._ssh(
+                (
+                    f"sleep 1; "
+                    f"if ps -p {shlex.quote(pid)} >/dev/null 2>&1; then echo RUNNING; else echo NOT_RUNNING; fi; "
+                    f"test -e {shlex.quote(self._remote_pcap)} && echo PCAP_EXISTS || echo PCAP_MISSING; "
+                    f"test -f {shlex.quote(self._remote_log)} && tail -n 20 {shlex.quote(self._remote_log)} || true"
+                ),
+                check=False,
+            )
+            if "NOT_RUNNING" in check_result.stdout and "PCAP_MISSING" in check_result.stdout:
+                raise RuntimeError(
+                    "Remote tcpdump exited immediately and did not create capture file. "
+                    f"Host={self._cfg.host} iface={self._cfg.iface}. "
+                    f"tcpdump output:\n{check_result.stdout.strip()}"
+                )
         else:
             log.error("Failed to start remote tcpdump: %s", result.stderr)
+            raise RuntimeError(
+                f"Failed to start remote tcpdump on {self._cfg.host}: {result.stderr.strip()}"
+            )
 
     def stop_capture(self) -> None:
         if not self._cfg.host:
@@ -68,10 +95,24 @@ class RemoteCapture:
             return local_path
 
         src = f"{self._cfg.user}@{self._cfg.host}:{self._remote_pcap}"
-        subprocess.run(
-            ["scp", src, str(local_path)],
-            check=True,
-        )
+        try:
+            subprocess.run(
+                ["scp", src, str(local_path)],
+                check=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            diag = self._ssh(
+                (
+                    f"sudo ls -l {shlex.quote(self._remote_pcap)} 2>&1 || true; "
+                    f"test -f {shlex.quote(self._remote_log)} && tail -n 40 {shlex.quote(self._remote_log)} || true"
+                ),
+                check=False,
+            )
+            raise RuntimeError(
+                "Failed to fetch remote pcap. "
+                f"Remote file={self._remote_pcap} host={self._cfg.host} iface={self._cfg.iface}. "
+                f"scp rc={exc.returncode}. Diagnostics:\n{diag.stdout.strip()}"
+            ) from exc
         log.info("Fetched pcap: %s -> %s", src, local_path)
         return local_path
 
