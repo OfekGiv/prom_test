@@ -121,8 +121,12 @@ def _from_dict(data: dict[str, Any]) -> L3fwdConfig:
         promiscuous=bool(app_data.get("promiscuous", AppConfig.promiscuous)),
         portmask=str(app_data.get("portmask", AppConfig.portmask)),
         config=app_config,
-        rule_ipv4=Path(app_data["rule_ipv4"]) if "rule_ipv4" in app_data else AppConfig.rule_ipv4,
-        rule_ipv6=Path(app_data["rule_ipv6"]) if "rule_ipv6" in app_data else AppConfig.rule_ipv6,
+        rule_ipv4=Path(app_data["rule_ipv4"])
+        if "rule_ipv4" in app_data
+        else AppConfig.rule_ipv4,
+        rule_ipv6=Path(app_data["rule_ipv6"])
+        if "rule_ipv6" in app_data
+        else AppConfig.rule_ipv6,
     )
 
     remote = RemoteConfig(

@@ -40,7 +40,9 @@ class RemoteCapture:
             check=False,
         )
 
-        capture_filter = self._cfg.capture_filter.strip() if self._cfg.capture_filter else ""
+        capture_filter = (
+            self._cfg.capture_filter.strip() if self._cfg.capture_filter else ""
+        )
         filter_part = f" {shlex.quote(capture_filter)} " if capture_filter else " "
         cmd = (
             f"nohup sudo tcpdump -i {shlex.quote(self._cfg.iface)} "
@@ -64,7 +66,10 @@ class RemoteCapture:
                 ),
                 check=False,
             )
-            if "NOT_RUNNING" in check_result.stdout and "PCAP_MISSING" in check_result.stdout:
+            if (
+                "NOT_RUNNING" in check_result.stdout
+                and "PCAP_MISSING" in check_result.stdout
+            ):
                 raise RuntimeError(
                     "Remote tcpdump exited immediately and did not create capture file. "
                     f"Host={self._cfg.host} iface={self._cfg.iface}. "
@@ -130,12 +135,18 @@ class RemoteCapture:
     # Internal
     # ------------------------------------------------------------------
 
-    def _ssh(self, remote_cmd: str, *, check: bool = True) -> subprocess.CompletedProcess:
-        target = f"{self._cfg.user}@{self._cfg.host}" if self._cfg.user else self._cfg.host
+    def _ssh(
+        self, remote_cmd: str, *, check: bool = True
+    ) -> subprocess.CompletedProcess:
+        target = (
+            f"{self._cfg.user}@{self._cfg.host}" if self._cfg.user else self._cfg.host
+        )
         argv = [
             "ssh",
-            "-o", "StrictHostKeyChecking=no",
-            "-o", "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "BatchMode=yes",
             target,
             remote_cmd,
         ]

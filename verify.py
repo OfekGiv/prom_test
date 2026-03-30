@@ -135,6 +135,7 @@ def check_pcap_sequence_order(path: Path, lcore_ids: list[int]) -> list[str]:
 # Golden-value formula (mirrors gen_pkts.py)
 # ---------------------------------------------------------------------------
 
+
 def _expected_byte99(lcore_id: int, seq: int, lcore_ids: list[int]) -> int:
     """Reproduce the packet sequence used by `gen_pkts.generate()`.
 
@@ -152,6 +153,7 @@ def _expected_byte99(lcore_id: int, seq: int, lcore_ids: list[int]) -> int:
 # Verification helpers
 # ---------------------------------------------------------------------------
 
+
 def check_packet_count(packets: list[bytes], expected: int) -> bool:
     """Return True if the number of packets matches expected."""
     return len(packets) == expected
@@ -164,10 +166,14 @@ def check_packet_content(packet: bytes, lcore_id: int, seq: int) -> bool:
     """
     if len(packet) < 100:
         return False
-    return packet[98] == (lcore_id & 0xFF) and packet[99] == _expected_byte99(lcore_id, seq)
+    return packet[98] == (lcore_id & 0xFF) and packet[99] == _expected_byte99(
+        lcore_id, seq
+    )
 
 
-def check_packet_order(packets: list[bytes], lcore_id: int, lcore_ids: list[int]) -> list[str]:
+def check_packet_order(
+    packets: list[bytes], lcore_id: int, lcore_ids: list[int]
+) -> list[str]:
     """Filter packets belonging to *lcore_id* (byte[98] == lcore_id) and verify
     that their sequence bytes match the generation order.
 

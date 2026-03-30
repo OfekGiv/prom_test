@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import math
 import os
+import re
 import signal
 import subprocess
 import threading
@@ -27,6 +28,8 @@ class L3fwdProcess:
         self._stdout: deque[str] = deque()
         self._stderr: deque[str] = deque()
         self._threads: list[threading.Thread] = []
+        self.sqn = ""
+        self.cqn = ""
 
     # ------------------------------------------------------------------
     # Command construction
@@ -43,14 +46,20 @@ class L3fwdProcess:
         cmd += [
             str(self._cfg.binary),
             # EAL args
-            "-l", eal.lcores,
-            "-n", str(eal.mem_channels),
-            "-a", f"{eal.pci_addr},{eal.pci_args}{int(math.log2(len(self._cfg.lcores)))}",
-            "--trace", "pmd.net.mlx5.db.ring",
-            "--trace-dir", str(self._cfg.traces_dir.resolve()),
+            "-l",
+            eal.lcores,
+            "-n",
+            str(eal.mem_channels),
+            "-a",
+            f"{eal.pci_addr},{eal.pci_args}{int(math.log2(len(self._cfg.lcores)))}",
+            "--trace",
+            "pmd.net.mlx5.db.ring",
+            "--trace-dir",
+            str(self._cfg.traces_dir.resolve()),
             "--",
             # App args
-            "-p", app.portmask,
+            "-p",
+            app.portmask,
             f"--config={app.config}",
             f"--rule_ipv4={app.rule_ipv4}",
             f"--rule_ipv6={app.rule_ipv6}",
@@ -100,6 +109,8 @@ class L3fwdProcess:
         Block until `pattern` appears in stdout or startup_timeout elapses.
         Returns True if the pattern was found, False on timeout.
         """
+        sqn_pattern = "txq 0 is assigned with SQN (0x[0-9a-f]+)"
+        cqn_pattern = "Created CQ with CQN: (0x[0-9a-f]+)"
         if self._cfg.dry_run:
             log.info("[dry-run] skipping wait_for_ready")
             return True
@@ -107,6 +118,16 @@ class L3fwdProcess:
         deadline = time.monotonic() + self._cfg.startup_timeout
         while time.monotonic() < deadline:
             all_lines = list(self._stdout) + list(self._stderr)
+            for line in all_lines:
+                if not self.sqn:
+                    sqn_match = re.search(sqn_pattern, line)
+                    if sqn_match:
+                        self.sqn = sqn_match.group(1)
+                if not self.cqn:
+                    cqn_match = re.search(cqn_pattern, line)
+                    if cqn_match:
+                        self.cqn = cqn_match.group(1)
+
             if any(pattern in line for line in all_lines):
                 log.info("l3fwd is ready (pattern: %r)", pattern)
                 return True
@@ -123,7 +144,48 @@ class L3fwdProcess:
             return
         if self._proc.poll() is not None:
             return  # already exited
+        with open("/tmp/wqdump_cq.txt", "w") as f:
+            subprocess.call(
+                [
+                    "sudo",
+                    "wqdump",
+                    "-d",
+                    "/dev/mst/mt4129_pciconf0",
+                    "--source",
+                    "cmp",
+                    "--qp",
+                    self.cqn,
+                    "--dump",
+                    "wq",
+                    "--format",
+                    "raw",
+                    "--num",
+                    str(20 * len(self._cfg.lcores)),
+                ],
+                stdout=f,
+            )
+        with open("/tmp/wqdump_sq.txt", "w") as f:
+            subprocess.call(
+                [
+                    "sudo",
+                    "wqdump",
+                    "-d",
+                    "/dev/mst/mt4129_pciconf0",
+                    "--source",
+                    "snd",
+                    "--qp",
+                    self.sqn,
+                    "--dump",
+                    "wq",
+                    "--format",
+                    "raw",
+                    "--num",
+                    str(34 * 5 * len(self._cfg.lcores)),
+                ],
+                stdout=f,
+            )
 
+        log.info("Dumped WQEs for SQN %s and CQN %s", self.sqn, self.cqn)
         log.info("Stopping l3fwd (SIGINT to process group)...")
         os.killpg(os.getpgid(self._proc.pid), signal.SIGINT)
         try:

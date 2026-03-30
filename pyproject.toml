@@ -12,3 +12,9 @@ dependencies = [
 testpaths = ["tests"]
 log_cli = true
 log_cli_level = "INFO"
+
+[dependency-groups]
+dev = [
+    "isort>=8.0.1",
+    "ruff>=0.15.8",
+]

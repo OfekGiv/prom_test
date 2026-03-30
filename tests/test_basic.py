@@ -25,6 +25,7 @@ log = logging.getLogger(__name__)
 
 # Import gen_pkts from the parent package
 import sys
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from gen_pkts import generate
 
@@ -122,8 +123,8 @@ def test_packets_sent(
             log.info("[packet-order] lcore %s errors: %s", lcore_id, errors)
         else:
             log.info("[packet-order] lcore %s OK", lcore_id)
-        assert not errors, (
-            f"lcore {lcore_id} packet ordering errors:\n" + "\n".join(errors)
+        assert not errors, f"lcore {lcore_id} packet ordering errors:\n" + "\n".join(
+            errors
         )
 
     # Verify capture order matches the generated global packet sequence (byte[99])
@@ -137,7 +138,9 @@ def test_packets_sent(
 
     # Verify that l3fwd trace output is in stable order (wqe_index should not decrease)
     traces_dir = traces_path
-    assert traces_dir.exists() and traces_dir.is_dir(), f"Expected trace directory '{traces_dir}' to exist"
+    assert traces_dir.exists() and traces_dir.is_dir(), (
+        f"Expected trace directory '{traces_dir}' to exist"
+    )
 
     trace_dirs = [p for p in traces_dir.iterdir() if p.is_dir()]
     assert trace_dirs, f"No trace output directories found under '{traces_dir}'"

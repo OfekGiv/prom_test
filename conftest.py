@@ -11,7 +11,7 @@ from typing import Iterator
 
 import pytest
 
-from config import L3fwdConfig, load_config, apply_cli_overrides
+from config import L3fwdConfig, apply_cli_overrides, load_config
 from process import L3fwdProcess
 from remote import RemoteCapture
 
@@ -27,17 +27,29 @@ _DEFAULT_CONFIG = Path(__file__).parent / "config.yaml"
 # CLI options
 # ---------------------------------------------------------------------------
 
+
 def pytest_addoption(parser: pytest.Parser) -> None:
     g = parser.getgroup("prom_test", "prom_test options")
-    g.addoption("--prom-config", default=str(_DEFAULT_CONFIG), help="Path to prom_test config.yaml")
-    g.addoption("--dry-run", action="store_true", default=False, help="Skip actual process/SSH execution")
+    g.addoption(
+        "--prom-config",
+        default=str(_DEFAULT_CONFIG),
+        help="Path to prom_test config.yaml",
+    )
+    g.addoption(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Skip actual process/SSH execution",
+    )
 
     # EAL overrides
     g.addoption("--binary", default=None, help="Path to dpdk-l3fwd binary")
     g.addoption("--lcores", default=None, help="EAL lcore list (e.g. '1-2')")
     g.addoption("--mem-channels", default=None, type=int, help="EAL -n value")
     g.addoption("--pci", default=None, help="PCI address (e.g. '0000:98:00.0')")
-    g.addoption("--pci-args", default=None, help="PCI device args (e.g. 'mu_sq_log_grp_size=1')")
+    g.addoption(
+        "--pci-args", default=None, help="PCI device args (e.g. 'mu_sq_log_grp_size=1')"
+    )
 
     # App overrides
     g.addoption("--portmask", default=None, help="Port mask (e.g. '0x1')")
